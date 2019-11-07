@@ -1,5 +1,5 @@
 !> \file ozphys.f
-!! This file is ozone sources and sinks.
+!! This file is ozone sources and sinks (previous version).
 
 
 !> This module contains the CCPP-compliant Ozone photochemistry scheme.
@@ -23,38 +23,15 @@
 
 
 !>\defgroup GFS_ozphys GFS ozphys Main
-!! @{
 !! \brief The operational GFS currently parameterizes ozone production and
 !! destruction based on monthly mean coefficients (\c global_o3prdlos.f77) provided by Naval
 !! Research Laboratory through CHEM2D chemistry model
 !! (McCormack et al. (2006) \cite mccormack_et_al_2006).
 !! \section arg_table_ozphys_run Argument Table
-!! | local_name     | standard_name                                                             | long_name                                                                  | units   | rank | type      | kind      | intent | optional |
-!! |----------------|---------------------------------------------------------------------------|----------------------------------------------------------------------------|---------|------|-----------|-----------|--------|----------|
-!! | ix             | horizontal_dimension                                                      | horizontal dimension                                                       | count   |    0 | integer   |           | in     | F        |
-!! | im             | horizontal_loop_extent                                                    | horizontal loop extent                                                     | count   |    0 | integer   |           | in     | F        |
-!! | levs           | vertical_dimension                                                        | number of vertical layers                                                  | count   |    0 | integer   |           | in     | F        |
-!! | ko3            | vertical_dimension_of_ozone_forcing_data                                  | number of vertical layers in ozone forcing data                            | count   |    0 | integer   |           | in     | F        |
-!! | dt             | time_step_for_physics                                                     | physics time step                                                          | s       |    0 | real      | kind_phys | in     | F        |
-!! | oz             | ozone_concentration_updated_by_physics                                    | ozone concentration updated by physics                                     | kg kg-1 |    2 | real      | kind_phys | inout  | F        |
-!! | tin            | air_temperature_updated_by_physics                                        | updated air temperature                                                    | K       |    2 | real      | kind_phys | in     | F        |
-!! | po3            | natural_log_of_ozone_forcing_data_pressure_levels                         | natural log of ozone forcing data pressure levels                          | log(Pa) |    1 | real      | kind_phys | in     | F        |
-!! | prsl           | air_pressure                                                              | mid-layer pressure                                                         | Pa      |    2 | real      | kind_phys | in     | F        |
-!! | prdout         | ozone_forcing                                                             | ozone forcing coefficients                                                 | various |    3 | real      | kind_phys | in     | F        |
-!! | oz_coeff       | number_of_coefficients_in_ozone_forcing_data                              | number of coefficients in ozone forcing data                               | index   |    0 | integer   |           | in     | F        |
-!! | delp           | air_pressure_difference_between_midlayers                                 | difference between mid-layer pressures                                     | Pa      |    2 | real      | kind_phys | in     | F        |
-!! | ldiag3d        | flag_diagnostics_3D                                                       | flag for calculating 3-D diagnostic fields                                 | flag    |    0 | logical   |           | in     | F        |
-!! | ozp1           | cumulative_change_in_ozone_concentration_due_to_production_and_loss_rate  | cumulative change in ozone concentration due to production and loss rate   | kg kg-1 |    2 | real      | kind_phys | inout  | F        |
-!! | ozp2           | cumulative_change_in_ozone_concentration_due_to_ozone_mixing_ratio        | cumulative change in ozone concentration due to ozone mixing ratio         | kg kg-1 |    2 | real      | kind_phys | inout  | F        |
-!! | ozp3           | cumulative_change_in_ozone_concentration_due_to_temperature               | cumulative change in ozone concentration due to temperature                | kg kg-1 |    2 | real      | kind_phys | inout  | F        |
-!! | ozp4           | cumulative_change_in_ozone_concentration_due_to_overhead_ozone_column     | cumulative change in ozone concentration due to overhead ozone column      | kg kg-1 |    2 | real      | kind_phys | inout  | F        |
-!! | con_g          | gravitational_acceleration                                                | gravitational acceleration                                                 | m s-2   |    0 | real      | kind_phys | in     | F        | 
-!! | me             | mpi_rank                                                                  | rank of the current MPI task                                               | index   |    0 | integer   |           | in     | F        |
-!! | errmsg         | ccpp_error_message                                                        | error message for error handling in CCPP                                   | none    |    0 | character | len=*     | out    | F        |
-!! | errflg         | ccpp_error_flag                                                           | error flag for error handling in CCPP                                      | flag    |    0 | integer   |           | out    | F        |
+!! \htmlinclude ozphys_run.html
 !!
 !> \section genal_ozphys GFS ozphys_run General Algorithm
-!! @{
+!> @{
       subroutine ozphys_run (                                           &
      &  ix, im, levs, ko3, dt, oz, tin, po3,                            &
      &  prsl, prdout, oz_coeff, delp, ldiag3d,                          &
@@ -69,9 +46,10 @@
       ! Interface variables
       integer, intent(in) :: im, ix, levs, ko3, oz_coeff, me
       real(kind=kind_phys), intent(inout) ::                            &
-     &                     oz(ix,levs),                                 &
-     &                     ozp1(ix,levs), ozp2(ix,levs), ozp3(ix,levs), &
-     &                     ozp4(ix,levs)
+     &                     oz(ix,levs)
+      ! These arrays may not be allocated and need assumed array sizes
+      real(kind=kind_phys), intent(inout) ::                            &
+     &                     ozp1(:,:), ozp2(:,:), ozp3(:,:), ozp4(:,:)
       real(kind=kind_phys), intent(in) ::                               &
      &                     dt, po3(ko3), prdout(ix,ko3,oz_coeff),       &
      &                     prsl(ix,levs), tin(ix,levs), delp(ix,levs),  &
@@ -162,12 +140,12 @@
             oz(i,l)   = (ozib(i) + prod(i,1)*dt) / (1.0 + prod(i,2)*dt)
           enddo
 !
-          if (ldiag3d) then     !     ozone change diagnostics
-            do i=1,im
-              ozp1(i,l) = ozp1(i,l) + prod(i,1)*dt
-              ozp2(i,l) = ozp2(i,l) + (oz(i,l) - ozib(i))
-            enddo
-          endif
+          !if (ldiag3d) then     !     ozone change diagnostics
+          !  do i=1,im
+          !    ozp1(i,l) = ozp1(i,l) + prod(i,1)*dt
+          !    ozp2(i,l) = ozp2(i,l) + (oz(i,l) - ozib(i))
+          !  enddo
+          !endif
         endif
 !> - Calculate the 4 terms of prognostic ozone change during time \a dt:  
 !!  - ozp1(:,:) - Ozone production from production/loss ratio 
@@ -183,21 +161,20 @@
 !    &,' ozib=',ozib(i),' l=',l,' tin=',tin(i,l),'colo3=',colo3(i,l+1)
             oz(i,l) = (ozib(i)  + tem*dt) / (1.0 + prod(i,2)*dt)
           enddo
-          if (ldiag3d) then     !     ozone change diagnostics
-            do i=1,im
-              ozp1(i,l) = ozp1(i,l) + prod(i,1)*dt
-              ozp2(i,l) = ozp2(i,l) + (oz(i,l) - ozib(i))
-              ozp3(i,l) = ozp3(i,l) + prod(i,3)*tin(i,l)*dt
-              ozp4(i,l) = ozp4(i,l) + prod(i,4)*colo3(i,l+1)*dt
-            enddo
-          endif
+          !if (ldiag3d) then     !     ozone change diagnostics
+          !  do i=1,im
+          !    ozp1(i,l) = ozp1(i,l) + prod(i,1)*dt
+          !    ozp2(i,l) = ozp2(i,l) + (oz(i,l) - ozib(i))
+          !    ozp3(i,l) = ozp3(i,l) + prod(i,3)*tin(i,l)*dt
+          !    ozp4(i,l) = ozp4(i,l) + prod(i,4)*colo3(i,l+1)*dt
+          !  enddo
+          !endif
         endif
 
       enddo                                ! vertical loop
 !
       return
       end subroutine ozphys_run
-!! @}
-!! @}
+!> @}
 
       end module ozphys

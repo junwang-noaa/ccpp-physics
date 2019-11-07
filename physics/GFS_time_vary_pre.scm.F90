@@ -11,13 +11,12 @@
 
       public GFS_time_vary_pre_init, GFS_time_vary_pre_run, GFS_time_vary_pre_finalize
 
+      logical :: is_initialized = .false.
+
       contains
 
 !> \section arg_table_GFS_time_vary_pre_init Argument Table
-!! | local_name     | standard_name                                          | long_name                                                               | units    | rank |  type                 |   kind    | intent | optional |
-!! |----------------|--------------------------------------------------------|-------------------------------------------------------------------------|----------|------|-----------------------|-----------|--------|----------|
-!! | errmsg         | ccpp_error_message                                     | error message for error handling in CCPP                                | none     |    0 | character             | len=*     | out    | F        |
-!! | errflg         | ccpp_error_flag                                        | error flag for error handling in CCPP                                   | flag     |    0 | integer               |           | out    | F        |
+!! \htmlinclude GFS_time_vary_pre_init.html
 !!
       subroutine GFS_time_vary_pre_init (errmsg, errflg)
 
@@ -30,17 +29,18 @@
          errmsg = ''
          errflg = 0
 
+         if (is_initialized) return
+ 
          !--- Call gfuncphys (funcphys.f) to compute all physics function tables.
          call gfuncphys ()
+
+         is_initialized = .true.
 
       end subroutine GFS_time_vary_pre_init
 
 
 !> \section arg_table_GFS_time_vary_pre_finalize Argument Table
-!! | local_name     | standard_name                                          | long_name                                                               | units    | rank |  type                 |   kind    | intent | optional |
-!! |----------------|--------------------------------------------------------|-------------------------------------------------------------------------|----------|------|-----------------------|-----------|--------|----------|
-!! | errmsg         | ccpp_error_message                                     | error message for error handling in CCPP                                | none     |    0 | character             | len=*     | out    | F        |
-!! | errflg         | ccpp_error_flag                                        | error flag for error handling in CCPP                                   | flag     |    0 | integer               |           | out    | F        |
+!! \htmlinclude GFS_time_vary_pre_finalize.html
 !!
       subroutine GFS_time_vary_pre_finalize(errmsg, errflg)
 
@@ -49,78 +49,142 @@
          character(len=*),                 intent(out)   :: errmsg
          integer,                          intent(out)   :: errflg
 
-         ! DH* this is the place to deallocate whatever is allocated by gfuncphys() in GFS_time_vary_pre_init
-
          ! Initialize CCPP error handling variables
          errmsg = ''
          errflg = 0
+
+         if (.not. is_initialized) return
+
+         ! DH* this is the place to deallocate whatever is allocated by gfuncphys() in GFS_time_vary_pre_init
+
+         is_initialized = .false.
 
       end subroutine GFS_time_vary_pre_finalize
 
 
 !> \section arg_table_GFS_time_vary_pre_run Argument Table
-!! | local_name     | standard_name                                          | long_name                                                             | units         | rank | type                  |    kind   | intent | optional |
-!! |----------------|--------------------------------------------------------|-----------------------------------------------------------------------|---------------|------|-----------------------|-----------|--------|----------|
-!! | Model          | GFS_control_type_instance                              | Fortran DDT containing FV3-GFS model control parameters               | DDT           |    0 | GFS_control_type      |           | inout  | F        |
-!! | Tbd            | GFS_tbd_type_instance                                  | Fortran DDT containing FV3-GFS miscellaneous data                     | DDT           |    0 | GFS_tbd_type          |           | in     | F        |
-!! | errmsg         | ccpp_error_message                                     | error message for error handling in CCPP                              | none          |    0 | character             | len=*     | out    | F        |
-!! | errflg         | ccpp_error_flag                                        | error flag for error handling in CCPP                                 | flag          |    0 | integer               |           | out    | F        |
+!! \htmlinclude GFS_time_vary_pre_run.html
 !!
-      subroutine GFS_time_vary_pre_run (Model, Tbd, errmsg, errflg)
+      subroutine GFS_time_vary_pre_run (jdat, idat, dtp, lsm, lsm_noahmp, nsswr, &
+        nslwr, idate, debug, me, master, nscyc, sec, phour, zhour, fhour, kdt,   &
+        julian, yearlen, ipt, lprnt, lssav, lsswr, lslwr, solhr, errmsg, errflg)
 
         use machine,               only: kind_phys
-        use GFS_typedefs,          only: GFS_control_type, GFS_tbd_type
 
         implicit none
-
-        type(GFS_control_type),           intent(inout) :: Model
-        type(GFS_tbd_type),               intent(in)    :: Tbd
+        
+        integer,                          intent(in)    :: idate(4)
+        integer,                          intent(in)    :: jdat(1:8), idat(1:8)
+        integer,                          intent(in)    :: lsm, lsm_noahmp,      &
+                                                           nsswr, nslwr, me,     &
+                                                           master, nscyc
+        logical,                          intent(in)    :: debug
+        real(kind=kind_phys),             intent(in)    :: dtp
+        
+        integer,                          intent(out)   :: kdt, yearlen, ipt
+        logical,                          intent(out)   :: lprnt, lssav, lsswr,  &
+                                                           lslwr
+        real(kind=kind_phys),             intent(out)   :: sec, phour, zhour,    &
+                                                           fhour, julian, solhr
+        
         character(len=*),                 intent(out)   :: errmsg
         integer,                          intent(out)   :: errflg
 
         real(kind=kind_phys), parameter :: con_24  =   24.0_kind_phys
         real(kind=kind_phys), parameter :: con_hr  = 3600.0_kind_phys
         real(kind=kind_phys) :: rinc(5)
+        
+        integer ::  iw3jdn      
+        integer :: jd0, jd1
+        real    :: fjd
 
         ! Initialize CCPP error handling variables
         errmsg = ''
         errflg = 0
 
-        if (Tbd%blkno==1) then
-          !--- Model%jdat is being updated directly inside of FV3GFS_cap.F90
-          !--- update calendars and triggers
-          rinc(1:5)   = 0
-          call w3difdat(Model%jdat,Model%idat,4,rinc)
-          Model%sec = rinc(4)
-          Model%phour = Model%sec/con_hr
-          !--- set current bucket hour
-          Model%zhour = Model%phour
-          Model%fhour = (Model%sec + Model%dtp)/con_hr
-          Model%kdt   = nint((Model%sec + Model%dtp)/Model%dtp)
+        ! Check initialization status
+        if (.not.is_initialized) then
+           write(errmsg,'(*(a))') "Logic error: GFS_time_vary_pre_run called &
+                                  &before GFS_time_vary_pre_init"
+           errflg = 1
+           return
+        end if
 
-          Model%ipt    = 1
-          Model%lprnt  = .false.
-          Model%lssav  = .true.
+        !--- jdat is being updated directly inside of the time integration
+        !--- loop of gmtb_scm.F90
+        !--- update calendars and triggers
+        rinc(1:5)   = 0
+        call w3difdat(jdat,idat,4,rinc)
+        sec = rinc(4)
+        phour = sec/con_hr
+        !--- set current bucket hour
+        zhour = phour
+        fhour = (sec + dtp)/con_hr
+        kdt   = nint((sec + dtp)/dtp)
+        
+        if(lsm == lsm_noahmp) then
+          !GJF* These calculations were originally in GFS_physics_driver.F90 for 
+          !     NoahMP. They were moved to this routine since they only depends 
+          !     on time (not space). Note that this code is included as-is from 
+          !     GFS_physics_driver.F90, but it may be simplified by using more 
+          !     NCEP W3 library calls (e.g., see W3DOXDAT, W3FS13 for Julian day 
+          !     of year and W3DIFDAT to determine the integer number of days in 
+          !     a given year). *GJF
+          ! Julian day calculation (fcst day of the year)
+          ! we need yearln and julian to
+          ! pass to noah mp sflx, idate is init, jdat is fcst;idate = jdat when kdt=1
+          ! jdat is changing
+          !
 
-          !--- radiation triggers
-          Model%lsswr  = (mod(Model%kdt, Model%nsswr) == 1)
-          Model%lslwr  = (mod(Model%kdt, Model%nslwr) == 1)
+          jd1    = iw3jdn(jdat(1),jdat(2),jdat(3))
+          jd0    = iw3jdn(jdat(1),1,1)
+          fjd    = float(jdat(5))/24.0 + float(jdat(6))/1440.0
 
-          !--- set the solar hour based on a combination of phour and time initial hour
-          Model%solhr  = mod(Model%phour+Model%idate(1),con_24)
-
-          if ((Model%debug) .and. (Model%me == Model%master)) then
-            print *,'   sec ', Model%sec
-            print *,'   kdt ', Model%kdt
-            print *,' nsswr ', Model%nsswr
-            print *,' nslwr ', Model%nslwr
-            print *,' nscyc ', Model%nscyc
-            print *,' lsswr ', Model%lsswr
-            print *,' lslwr ', Model%lslwr
-            print *,' fhour ', Model%fhour
-            print *,' phour ', Model%phour
-            print *,' solhr ', Model%solhr
+          julian = float(jd1-jd0) + fjd
+          
+          !
+          ! Year length
+          !
+          ! what if the integration goes from one year to another?
+          ! iyr or jyr ? from 365 to 366 or from 366 to 365
+          !
+          ! is this against model's noleap yr assumption?
+          if (mod(jdat(1),4) == 0) then
+            yearlen = 366
+            if (mod(jdat(1),100) == 0) then
+              yearlen = 365
+              if (mod(jdat(1),400) == 0) then
+                yearlen = 366
+              endif
+            endif
           endif
+        endif
+        
+        ipt    = 1
+        lprnt  = .false.
+        lssav  = .true.
+
+        !--- radiation triggers
+        lsswr  = (mod(kdt, nsswr) == 1)
+        lslwr  = (mod(kdt, nslwr) == 1)
+        !--- allow for radiation to be called on every physics time step, if needed
+        if (nsswr == 1)  lsswr = .true.
+        if (nslwr == 1)  lslwr = .true.
+
+        !--- set the solar hour based on a combination of phour and time initial hour
+        solhr  = mod(phour+idate(1),con_24)
+
+        if ((debug) .and. (me == master)) then
+          print *,'   sec ', sec
+          print *,'   kdt ', kdt
+          print *,' nsswr ', nsswr
+          print *,' nslwr ', nslwr
+          print *,' nscyc ', nscyc
+          print *,' lsswr ', lsswr
+          print *,' lslwr ', lslwr
+          print *,' fhour ', fhour
+          print *,' phour ', phour
+          print *,' solhr ', solhr
         endif
 
       end subroutine GFS_time_vary_pre_run
