@@ -23,8 +23,8 @@
       subroutine sfc_ocean_run                                          &
 !...................................
 !  ---  inputs:
-     &     ( im, cp, rd, eps, epsm1, hvap, rvrdm1, ps, t1, q1,          &
-     &       tskin, cm, ch, prsl1, prslki, wet, wind,                   &
+     &     ( im, cp, rd, eps, epsm1, hvap, rvrdm1, ps, t1, q1,          &   ! --- inputs
+     &       tskin, cm, ch, prsl1, prslki, wet, lake, wind,             &
      &       flag_iter,                                                 &
 !  ---  outputs:
      &       qsurf, cmm, chh, gflux, evap, hflx, ep,                    &
@@ -98,7 +98,7 @@
       real (kind=kind_phys), dimension(im), intent(in) :: ps,           &
      &      t1, q1, tskin, cm, ch, prsl1, prslki, wind
 
-      logical, dimension(im), intent(in) :: flag_iter, wet
+      logical, dimension(im), intent(in) :: flag_iter, wet, lake
 
 !  ---  outputs:
       real (kind=kind_phys), dimension(im), intent(inout) :: qsurf,     &
@@ -134,6 +134,7 @@
 !           rho is density, qss is sat. hum. at surface
 
         if ( flag(i) ) then
+         if(.not.lake(i)) then
           q0       = max( q1(i), 1.0e-8 )
           rho      = prsl1(i) / (rd*t1(i)*(1.0 + rvrdm1*q0))
 
@@ -162,6 +163,7 @@
           hflx(i)  = hflx(i) * tem * cpinv
           evap(i)  = evap(i) * tem * hvapi
         endif
+       endif  !end of if not lake
       enddo
 !
       return
